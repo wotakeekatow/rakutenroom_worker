@@ -63,7 +63,6 @@ if not sig or not ts or not valid_signature(access_key, slot, ts, sig):
     st.stop()
 
 keywords = MORNING_KEYWORDS if slot == "morning" else AFTERNOON_KEYWORDS
-target_count = 10 if slot == "morning" else 20
 
 try:
     pool = []
@@ -75,16 +74,23 @@ except Exception as exc:
     st.error(f"ROOM_WORKER_ERROR:{type(exc).__name__}:{str(exc)[:160]}")
     st.stop()
 
-selected = select_candidates(pool, target_count)
+# Funnel fixed by ROOM_SCORING_SPEC.md:
+# full API pool -> 20 research candidates -> 5 focus candidates -> 3 human-review candidates.
+research = select_candidates(pool, 20)
+focus = research[:5]
+selected = focus[:3]
 now = datetime.now(JST)
 payload = {
-    "version": "0.6",
+    "version": "0.6.1",
     "generated_at": now.isoformat(timespec="seconds"),
     "slot": slot,
-    "target_count": target_count,
+    "target_count": 3,
     "candidate_pool": len(pool),
+    "research_count": len(research),
+    "focus_count": len(focus),
     "ready_count": len(selected),
     "strategy": "収益バランス",
+    "selection_funnel": "pool→20→5→3",
     "review_mode": "automated_safety_review_v0.6",
     "ai_review": "自動安全レビュー済み（生成AI APIは未使用）",
     "items": selected,
@@ -94,5 +100,7 @@ raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf
 encoded = base64.urlsafe_b64encode(raw).decode("ascii")
 
 st.success("ROOM_QUEUE_READY")
-st.caption(f"{slot}: {len(selected)}/{target_count} candidates")
+st.caption(
+    f"{slot}: pool {len(pool)} → research {len(research)} → focus {len(focus)} → ready {len(selected)}/3"
+)
 st.code(f"ROOM_QUEUE_JSON_B64:{encoded}", language=None)
