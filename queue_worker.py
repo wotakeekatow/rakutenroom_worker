@@ -9,8 +9,9 @@ import requests
 ITEM_SEARCH_ENDPOINT = "https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20260701"
 RANKING_ENDPOINT = "https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601"
 
-MORNING_KEYWORDS = ["水筒", "キッチン 収納", "タオル", "掃除", "文房具"]
-AFTERNOON_KEYWORDS = ["収納", "キッチン", "インテリア", "日用品", "バッグ", "食品", "家電", "文房具", "タオル", "水筒"]
+# Base demand + current seasonal themes seen in official ROOM features (summer 2026).
+MORNING_KEYWORDS = ["水筒", "キッチン 収納", "タオル", "掃除", "文房具", "日傘"]
+AFTERNOON_KEYWORDS = ["収納", "キッチン", "インテリア", "日用品", "バッグ", "食品", "家電", "文房具", "タオル", "水筒", "日傘", "ハンディファン", "サーキュレーター", "レンジ調理"]
 
 RISK_WORDS = [
     "医薬品", "サプリ", "健康食品", "ダイエット", "育毛", "aga", "精力",
@@ -51,11 +52,7 @@ def extract_items(data: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def common_params(app_id: str, affiliate_id: str) -> Dict[str, Any]:
-    params: Dict[str, Any] = {
-        "applicationId": app_id,
-        "format": "json",
-        "formatVersion": 2,
-    }
+    params: Dict[str, Any] = {"applicationId": app_id, "format": "json", "formatVersion": 2}
     if affiliate_id:
         params["affiliateId"] = affiliate_id
     return params
@@ -85,17 +82,7 @@ def ranking_items(app_id: str, access_key: str, affiliate_id: str) -> List[Dict[
 
 def search_items(app_id: str, access_key: str, affiliate_id: str, keyword: str) -> List[Dict[str, Any]]:
     p = common_params(app_id, affiliate_id)
-    p.update(
-        {
-            "keyword": keyword,
-            "hits": 30,
-            "sort": "standard",
-            "availability": 1,
-            "imageFlag": 1,
-            "hasReviewFlag": 1,
-            "carrier": 2,
-        }
-    )
+    p.update({"keyword": keyword, "hits": 30, "sort": "standard", "availability": 1, "imageFlag": 1, "hasReviewFlag": 1, "carrier": 2})
     items = extract_items(api_get(ITEM_SEARCH_ENDPOINT, p, access_key))
     for item in items:
         item["_source"] = keyword
@@ -126,7 +113,6 @@ def score_item(item: Dict[str, Any]) -> float:
     price = max(0.0, num(getv(item, "itemPrice"), 0))
     points = min(10.0, max(0.0, num(getv(item, "pointRate"), 0)))
     shipping = int(num(getv(item, "postageFlag"), 1))
-
     rank_score = max(0.0, 1.0 - ((rank - 1.0) / 29.0)) if rank > 0 else 0.0
     review_score = min(1.0, math.log10(reviews + 1.0) / 5.0)
     rating_score = avg / 5.0
@@ -135,16 +121,7 @@ def score_item(item: Dict[str, Any]) -> float:
     shipping_score = 1.0 if shipping == 0 else 0.0
     point_score = points / 10.0
     popularity_score = review_score if rank <= 0 else max(rank_score, review_score * 0.8)
-
-    score = (
-        popularity_score * 25
-        + review_score * 20
-        + rating_score * 15
-        + affiliate_score * 15
-        + commission_score * 15
-        + shipping_score * 5
-        + point_score * 5
-    )
+    score = popularity_score * 25 + review_score * 20 + rating_score * 15 + affiliate_score * 15 + commission_score * 15 + shipping_score * 5 + point_score * 5
     return round(min(100.0, score), 1)
 
 
@@ -157,22 +134,7 @@ def normalize(item: Dict[str, Any]) -> Dict[str, Any]:
     price = int(num(getv(item, "itemPrice"), 0))
     affiliate_rate = round(num(getv(item, "affiliateRate"), 0), 1)
     name = str(getv(item, "itemName", "") or "").strip()
-    return {
-        "score": score_item(item),
-        "rank": int(num(getv(item, "rank"), 0)) or None,
-        "itemName": name,
-        "itemPrice": price,
-        "reviewCount": int(num(getv(item, "reviewCount"), 0)),
-        "reviewAverage": round(num(getv(item, "reviewAverage"), 0), 2),
-        "affiliateRate": affiliate_rate,
-        "estimatedCommission": estimated_commission(price, affiliate_rate),
-        "pointRate": int(num(getv(item, "pointRate"), 0)),
-        "postageFlag": int(num(getv(item, "postageFlag"), 1)),
-        "shopName": str(getv(item, "shopName", "") or "").strip(),
-        "itemCode": str(getv(item, "itemCode", "") or "").strip(),
-        "url": getv(item, "affiliateUrl") or getv(item, "itemUrl") or "",
-        "source": str(item.get("_source", "")),
-    }
+    return {"score": score_item(item), "rank": int(num(getv(item, "rank"), 0)) or None, "itemName": name, "itemPrice": price, "reviewCount": int(num(getv(item, "reviewCount"), 0)), "reviewAverage": round(num(getv(item, "reviewAverage"), 0), 2), "affiliateRate": affiliate_rate, "estimatedCommission": estimated_commission(price, affiliate_rate), "pointRate": int(num(getv(item, "pointRate"), 0)), "postageFlag": int(num(getv(item, "postageFlag"), 1)), "shopName": str(getv(item, "shopName", "") or "").strip(), "itemCode": str(getv(item, "itemCode", "") or "").strip(), "url": getv(item, "affiliateUrl") or getv(item, "itemUrl") or "", "source": str(item.get("_source", ""))}
 
 
 def short_name(name: str, max_len: int = 42) -> str:
@@ -189,73 +151,58 @@ def clean_title_for_draft(name: str) -> str:
 
 
 def intro_for_source(source: str) -> str:
-    if "食品" in source:
-        return "食卓やストック候補として気になる"
-    if any(x in source for x in ["キッチン", "収納", "インテリア"]):
-        return "暮らしを整える候補として気になる"
-    if any(x in source for x in ["タオル", "掃除", "日用品"]):
-        return "毎日使うものとして気になる"
-    if "文房具" in source:
-        return "仕事や家まわりで使いやすそうな候補として気になる"
-    if "水筒" in source:
-        return "日常使いの候補として気になる"
-    if "バッグ" in source:
-        return "普段使いの候補として気になる"
-    if "家電" in source:
-        return "暮らしの道具として気になる"
-    return "気になる楽天アイテム"
+    if any(x in source for x in ["日傘", "ハンディファン", "サーキュレーター"]): return "暑い日の暮らしを少しラクにしてくれそう"
+    if "レンジ調理" in source: return "忙しい日のごはん作りで頼れそう"
+    if "食品" in source: return "食卓やストック候補として気になる"
+    if any(x in source for x in ["キッチン", "収納", "インテリア"]): return "暮らしを整える候補として気になる"
+    if any(x in source for x in ["タオル", "掃除", "日用品"]): return "毎日使うものだからこそ気になる"
+    if "文房具" in source: return "仕事や家まわりで使いやすそう"
+    if "水筒" in source: return "毎日の持ち歩き候補として気になる"
+    if "バッグ" in source: return "普段使いに取り入れやすそう"
+    if "家電" in source: return "暮らしの道具として気になる"
+    return "みんながチェックしている中で気になった楽天アイテム"
+
+
+def tags_for_source(source: str) -> List[str]:
+    tags = ["#楽天ROOM"]
+    if any(x in source for x in ["日傘", "ハンディファン", "サーキュレーター", "水筒"]): tags += ["#夏アイテム"]
+    if any(x in source for x in ["キッチン", "レンジ調理"]): tags += ["#キッチンの相棒", "#時短家事"]
+    elif any(x in source for x in ["収納", "インテリア"]): tags += ["#インテリア"]
+    elif any(x in source for x in ["掃除", "日用品"]): tags += ["#時短家事"]
+    elif "食品" in source: tags += ["#我が家のお取り寄せ"]
+    if "ランキング" in source: tags += ["#売れ筋"]
+    return tags[:4]
 
 
 def room_draft(item: Dict[str, Any]) -> str:
     title = short_name(clean_title_for_draft(item["itemName"]), 38)
-    facts: List[str] = []
-    if item["reviewCount"]:
-        facts.append(f"レビュー{item['reviewCount']:,}件")
-    if item["reviewAverage"]:
-        facts.append(f"評価★{item['reviewAverage']:.1f}")
-    if item["itemPrice"]:
-        facts.append(f"取得時 約{item['itemPrice']:,}円")
-    lines = [f"{intro_for_source(item['source'])}👀 {title}"]
-    if facts:
-        lines.append(" / ".join(facts[:3]))
-    lines.append("条件を比べながらチェック中。価格・在庫・キャンペーンは変わるので、投稿前に商品ページで最新情報を確認します。")
+    lines = [f"{intro_for_source(item['source'])}👀", title]
+    # Use social proof only when it is meaningful; avoid turning every post into a spec sheet.
+    if item["reviewCount"] >= 100 and item["reviewAverage"] >= 4.0:
+        lines.append(f"レビュー{item['reviewCount']:,}件・評価★{item['reviewAverage']:.1f}で、気になってチェック中。")
+    elif item["reviewAverage"] >= 4.0:
+        lines.append(f"評価★{item['reviewAverage']:.1f}。候補のひとつとしてチェック中。")
+    else:
+        lines.append("使い方やサイズ感を商品ページで確認して選びたいアイテム。")
+    lines.append(" ".join(tags_for_source(item["source"])))
     return "\n".join(lines)
 
 
 def automated_review(item: Dict[str, Any]) -> Dict[str, Any]:
     notes: List[str] = []
     lowered = item["itemName"].lower()
-
-    if any(word in lowered for word in DYNAMIC_PROMO_WORDS):
-        notes.append("商品名にキャンペーン・期間・ランキング表現あり。投稿前に最新条件を確認。")
-    if item["itemPrice"] >= 30000:
-        notes.append("高額商品。価格・送料・配送条件を投稿前に再確認。")
-    if item["reviewCount"] < 20:
-        notes.append("レビュー件数が少なめ。表現を控えめにする。")
-    if item["reviewAverage"] and item["reviewAverage"] < 4.0:
-        notes.append("評価4.0未満。おすすめ断定を避ける。")
-
+    if any(word in lowered for word in DYNAMIC_PROMO_WORDS): notes.append("商品名にキャンペーン・期間・ランキング表現あり。投稿前に最新条件を確認。")
+    if item["itemPrice"] >= 30000: notes.append("高額商品。価格・送料・配送条件を投稿前に再確認。")
+    if item["reviewCount"] < 20: notes.append("レビュー件数が少なめ。表現を控えめにする。")
+    if item["reviewAverage"] and item["reviewAverage"] < 4.0: notes.append("評価4.0未満。おすすめ断定を避ける。")
     blockers: List[str] = []
-    if not item["url"]:
-        blockers.append("商品URLが取得できていない。")
-    if not item["itemName"]:
-        blockers.append("商品名が取得できていない。")
-    if item["itemPrice"] <= 0:
-        blockers.append("価格が取得できていない。")
-
-    if blockers:
-        status = "hold"
-        notes = blockers + notes
-    elif notes:
-        status = "passed_with_notes"
-    else:
-        status = "passed"
-
-    return {
-        "status": status,
-        "notes": notes,
-        "checked_fields": ["商品名", "価格", "URL", "レビュー", "変動キャンペーン表現", "高リスク語"],
-    }
+    if not item["url"]: blockers.append("商品URLが取得できていない。")
+    if not item["itemName"]: blockers.append("商品名が取得できていない。")
+    if item["itemPrice"] <= 0: blockers.append("価格が取得できていない。")
+    if blockers: status, notes = "hold", blockers + notes
+    elif notes: status = "passed_with_notes"
+    else: status = "passed"
+    return {"status": status, "notes": notes, "checked_fields": ["商品名", "価格", "URL", "レビュー", "変動キャンペーン表現", "高リスク語"]}
 
 
 def select_candidates(items: Iterable[Dict[str, Any]], count: int) -> List[Dict[str, Any]]:
@@ -264,56 +211,33 @@ def select_candidates(items: Iterable[Dict[str, Any]], count: int) -> List[Dict[
     for item in items:
         row = normalize(item)
         key = row["itemCode"] or row["url"] or row["itemName"]
-        if not key or key in seen or not row["itemName"] or risky(row["itemName"]):
-            continue
-        seen.add(key)
-        normalized.append(row)
-
+        if not key or key in seen or not row["itemName"] or risky(row["itemName"]): continue
+        seen.add(key); normalized.append(row)
     normalized.sort(key=lambda x: (x["score"], x["reviewCount"]), reverse=True)
-
     selected: List[Dict[str, Any]] = []
     source_counts: Dict[str, int] = {}
     for row in normalized:
         source = row["source"] or "other"
-        if source_counts.get(source, 0) >= 3:
-            continue
-        selected.append(row)
-        source_counts[source] = source_counts.get(source, 0) + 1
-        if len(selected) >= count:
-            break
-
+        if source_counts.get(source, 0) >= 3: continue
+        selected.append(row); source_counts[source] = source_counts.get(source, 0) + 1
+        if len(selected) >= count: break
     if len(selected) < count:
         selected_keys = {x["itemCode"] or x["url"] or x["itemName"] for x in selected}
         for row in normalized:
             key = row["itemCode"] or row["url"] or row["itemName"]
-            if key in selected_keys:
-                continue
-            selected.append(row)
-            selected_keys.add(key)
-            if len(selected) >= count:
-                break
-
+            if key in selected_keys: continue
+            selected.append(row); selected_keys.add(key)
+            if len(selected) >= count: break
     final: List[Dict[str, Any]] = []
     for row in selected:
-        row["draft"] = room_draft(row)
-        row["review"] = automated_review(row)
-        row["status"] = "ready_for_review" if row["review"]["status"] != "hold" else "hold"
-        if row["status"] == "ready_for_review":
-            final.append(row)
-
+        row["draft"] = room_draft(row); row["review"] = automated_review(row); row["status"] = "ready_for_review" if row["review"]["status"] != "hold" else "hold"
+        if row["status"] == "ready_for_review": final.append(row)
     if len(final) < count:
         final_keys = {x["itemCode"] or x["url"] or x["itemName"] for x in final}
         for row in normalized:
             key = row["itemCode"] or row["url"] or row["itemName"]
-            if key in final_keys:
-                continue
-            row["draft"] = room_draft(row)
-            row["review"] = automated_review(row)
-            row["status"] = "ready_for_review" if row["review"]["status"] != "hold" else "hold"
-            if row["status"] == "ready_for_review":
-                final.append(row)
-                final_keys.add(key)
-            if len(final) >= count:
-                break
-
+            if key in final_keys: continue
+            row["draft"] = room_draft(row); row["review"] = automated_review(row); row["status"] = "ready_for_review" if row["review"]["status"] != "hold" else "hold"
+            if row["status"] == "ready_for_review": final.append(row); final_keys.add(key)
+            if len(final) >= count: break
     return final[:count]
