@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import Any, Dict, Iterable, List, Optional
 
 import requests
@@ -15,6 +16,11 @@ RISK_WORDS = [
     "医薬品", "サプリ", "健康食品", "ダイエット", "育毛", "aga", "精力",
     "コンタクト", "カラコン", "cbd", "電子タバコ", "vape", "ビール", "ワイン",
     "焼酎", "ウイスキー", "日本酒",
+]
+
+DYNAMIC_PROMO_WORDS = [
+    "クーポン", "ポイント", "off", "sale", "セール", "半額", "今だけ", "本日",
+    "期間限定", "ランキング", "楽天1位", "送料無料",
 ]
 
 
@@ -173,20 +179,83 @@ def short_name(name: str, max_len: int = 42) -> str:
     return name if len(name) <= max_len else name[: max_len - 1] + "…"
 
 
+def clean_title_for_draft(name: str) -> str:
+    cleaned = re.sub(r"【[^】]{1,80}】", " ", name)
+    cleaned = re.sub(r"［[^］]{1,80}］", " ", cleaned)
+    cleaned = re.sub(r"\[[^\]]{1,80}\]", " ", cleaned)
+    cleaned = re.sub(r"＼[^／]{1,80}／", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -_/・")
+    return cleaned or name
+
+
+def intro_for_source(source: str) -> str:
+    if "食品" in source:
+        return "食卓やストック候補として気になる"
+    if any(x in source for x in ["キッチン", "収納", "インテリア"]):
+        return "暮らしを整える候補として気になる"
+    if any(x in source for x in ["タオル", "掃除", "日用品"]):
+        return "毎日使うものとして気になる"
+    if "文房具" in source:
+        return "仕事や家まわりで使いやすそうな候補として気になる"
+    if "水筒" in source:
+        return "日常使いの候補として気になる"
+    if "バッグ" in source:
+        return "普段使いの候補として気になる"
+    if "家電" in source:
+        return "暮らしの道具として気になる"
+    return "気になる楽天アイテム"
+
+
 def room_draft(item: Dict[str, Any]) -> str:
+    title = short_name(clean_title_for_draft(item["itemName"]), 38)
     facts: List[str] = []
     if item["reviewCount"]:
         facts.append(f"レビュー{item['reviewCount']:,}件")
     if item["reviewAverage"]:
         facts.append(f"評価★{item['reviewAverage']:.1f}")
     if item["itemPrice"]:
-        facts.append(f"取得時価格 約{item['itemPrice']:,}円")
-    lines = [f"気になる楽天アイテムをチェック👀 {short_name(item['itemName'])}"]
+        facts.append(f"取得時 約{item['itemPrice']:,}円")
+    lines = [f"{intro_for_source(item['source'])}👀 {title}"]
     if facts:
         lines.append(" / ".join(facts[:3]))
-    lines.append("人気度・レビュー・条件を見ながら比較中です。")
-    lines.append("価格・在庫・商品説明は変わることがあるので、購入前に商品ページで最新情報を確認してください。")
+    lines.append("条件を比べながらチェック中。価格・在庫・キャンペーンは変わるので、投稿前に商品ページで最新情報を確認します。")
     return "\n".join(lines)
+
+
+def automated_review(item: Dict[str, Any]) -> Dict[str, Any]:
+    notes: List[str] = []
+    lowered = item["itemName"].lower()
+
+    if any(word in lowered for word in DYNAMIC_PROMO_WORDS):
+        notes.append("商品名にキャンペーン・期間・ランキング表現あり。投稿前に最新条件を確認。")
+    if item["itemPrice"] >= 30000:
+        notes.append("高額商品。価格・送料・配送条件を投稿前に再確認。")
+    if item["reviewCount"] < 20:
+        notes.append("レビュー件数が少なめ。表現を控えめにする。")
+    if item["reviewAverage"] and item["reviewAverage"] < 4.0:
+        notes.append("評価4.0未満。おすすめ断定を避ける。")
+
+    blockers: List[str] = []
+    if not item["url"]:
+        blockers.append("商品URLが取得できていない。")
+    if not item["itemName"]:
+        blockers.append("商品名が取得できていない。")
+    if item["itemPrice"] <= 0:
+        blockers.append("価格が取得できていない。")
+
+    if blockers:
+        status = "hold"
+        notes = blockers + notes
+    elif notes:
+        status = "passed_with_notes"
+    else:
+        status = "passed"
+
+    return {
+        "status": status,
+        "notes": notes,
+        "checked_fields": ["商品名", "価格", "URL", "レビュー", "変動キャンペーン表現", "高リスク語"],
+    }
 
 
 def select_candidates(items: Iterable[Dict[str, Any]], count: int) -> List[Dict[str, Any]]:
@@ -224,7 +293,27 @@ def select_candidates(items: Iterable[Dict[str, Any]], count: int) -> List[Dict[
             if len(selected) >= count:
                 break
 
+    final: List[Dict[str, Any]] = []
     for row in selected:
         row["draft"] = room_draft(row)
-        row["status"] = "ready_for_review"
-    return selected
+        row["review"] = automated_review(row)
+        row["status"] = "ready_for_review" if row["review"]["status"] != "hold" else "hold"
+        if row["status"] == "ready_for_review":
+            final.append(row)
+
+    if len(final) < count:
+        final_keys = {x["itemCode"] or x["url"] or x["itemName"] for x in final}
+        for row in normalized:
+            key = row["itemCode"] or row["url"] or row["itemName"]
+            if key in final_keys:
+                continue
+            row["draft"] = room_draft(row)
+            row["review"] = automated_review(row)
+            row["status"] = "ready_for_review" if row["review"]["status"] != "hold" else "hold"
+            if row["status"] == "ready_for_review":
+                final.append(row)
+                final_keys.add(key)
+            if len(final) >= count:
+                break
+
+    return final[:count]
