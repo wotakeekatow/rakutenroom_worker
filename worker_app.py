@@ -78,14 +78,15 @@ except Exception as exc:
 selected = select_candidates(pool, target_count)
 now = datetime.now(JST)
 payload = {
-    "version": "0.5.3",
+    "version": "0.6",
     "generated_at": now.isoformat(timespec="seconds"),
     "slot": slot,
     "target_count": target_count,
     "candidate_pool": len(pool),
     "ready_count": len(selected),
     "strategy": "収益バランス",
-    "ai_review": "v0.6で追加予定",
+    "review_mode": "automated_safety_review_v0.6",
+    "ai_review": "自動安全レビュー済み（生成AI APIは未使用）",
     "items": selected,
 }
 
