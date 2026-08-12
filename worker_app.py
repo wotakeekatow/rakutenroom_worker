@@ -19,6 +19,7 @@ from queue_worker import (
 )
 
 JST = ZoneInfo("Asia/Tokyo")
+WORKER_CANDIDATE_COUNT = 120
 
 st.set_page_config(page_title="ROOM queue worker", page_icon="⚙️", layout="centered")
 
@@ -74,22 +75,21 @@ except Exception as exc:
     st.error(f"ROOM_WORKER_ERROR:{type(exc).__name__}:{str(exc)[:160]}")
     st.stop()
 
-# Volume-first operation chosen by the user: keep up to 20 human-review candidates.
-selected = select_candidates(pool, 20)
+# Return a wider pool. The private app repository removes anything shown on prior days
+# and then keeps 10 morning / 20 afternoon items.
+selected = select_candidates(pool, WORKER_CANDIDATE_COUNT)
 now = datetime.now(JST)
 payload = {
-    "version": "0.6.2",
+    "version": "0.7.0",
     "generated_at": now.isoformat(timespec="seconds"),
     "slot": slot,
-    "target_count": 20,
+    "target_count": WORKER_CANDIDATE_COUNT,
     "candidate_pool": len(pool),
-    "research_count": len(selected),
-    "focus_count": len(selected),
     "ready_count": len(selected),
     "strategy": "収益バランス",
-    "selection_funnel": "pool→20",
-    "review_mode": "automated_safety_review_v0.6",
-    "ai_review": "自動安全レビュー済み（生成AI APIは未使用）",
+    "selection_funnel": f"pool→{WORKER_CANDIDATE_COUNT}→history-filter",
+    "review_mode": "automated_safety_review_v0.7",
+    "copy_style": "trend-aware_context_hook_v0.7",
     "items": selected,
 }
 
@@ -97,7 +97,5 @@ raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf
 encoded = base64.urlsafe_b64encode(raw).decode("ascii")
 
 st.success("ROOM_QUEUE_READY")
-st.caption(
-    f"{slot}: pool {len(pool)} → ready {len(selected)}/20"
-)
+st.caption(f"{slot}: pool {len(pool)} → worker candidates {len(selected)}")
 st.code(f"ROOM_QUEUE_JSON_B64:{encoded}", language=None)
