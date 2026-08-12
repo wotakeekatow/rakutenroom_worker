@@ -74,23 +74,20 @@ except Exception as exc:
     st.error(f"ROOM_WORKER_ERROR:{type(exc).__name__}:{str(exc)[:160]}")
     st.stop()
 
-# Funnel fixed by ROOM_SCORING_SPEC.md:
-# full API pool -> 20 research candidates -> 5 focus candidates -> 3 human-review candidates.
-research = select_candidates(pool, 20)
-focus = research[:5]
-selected = focus[:3]
+# Volume-first operation chosen by the user: keep up to 20 human-review candidates.
+selected = select_candidates(pool, 20)
 now = datetime.now(JST)
 payload = {
-    "version": "0.6.1",
+    "version": "0.6.2",
     "generated_at": now.isoformat(timespec="seconds"),
     "slot": slot,
-    "target_count": 3,
+    "target_count": 20,
     "candidate_pool": len(pool),
-    "research_count": len(research),
-    "focus_count": len(focus),
+    "research_count": len(selected),
+    "focus_count": len(selected),
     "ready_count": len(selected),
     "strategy": "収益バランス",
-    "selection_funnel": "pool→20→5→3",
+    "selection_funnel": "pool→20",
     "review_mode": "automated_safety_review_v0.6",
     "ai_review": "自動安全レビュー済み（生成AI APIは未使用）",
     "items": selected,
@@ -101,6 +98,6 @@ encoded = base64.urlsafe_b64encode(raw).decode("ascii")
 
 st.success("ROOM_QUEUE_READY")
 st.caption(
-    f"{slot}: pool {len(pool)} → research {len(research)} → focus {len(focus)} → ready {len(selected)}/3"
+    f"{slot}: pool {len(pool)} → ready {len(selected)}/20"
 )
 st.code(f"ROOM_QUEUE_JSON_B64:{encoded}", language=None)
