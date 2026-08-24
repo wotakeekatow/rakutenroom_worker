@@ -22,7 +22,7 @@ jobs:
 
       - name: Fetch verified RC6 artifact
         env:
-          RC6_URL: "https://sdmntprjapaneast.oaiusercontent.com/files/00000000-8858-8209-98ad-de59bb2f08e1/raw?se=2026-08-24T21%3A01%3A21Z&sp=r&sv=2026-02-06&sr=b&scid=b1da96ef-b6d1-5561-a15d-5752f9184222&skoid=b1bca990-dcac-4c31-8ca1-ac563cf24c54&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-08-24T05%3A20%3A17Z&ske=2026-08-25T05%3A20%3A17Z&sks=b&skv=2026-02-06&sig=JJcfVJW6kClcKXFmkx3f2Tj9QzaUsdl5dOXN71sbiX0%3D"
+          RC6_URL: "https://sdmntprjapaneast.oaiusercontent.com/files/00000000-af40-8209-b5f5-24ad04ef450f/raw?se=2026-08-24T21%3A02%3A31Z&sp=r&sv=2026-02-06&sr=b&scid=dd53031e-1f80-5296-b11a-240ba748166e&skoid=b1bca990-dcac-4c31-8ca1-ac563cf24c54&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-08-24T20%3A48%3A12Z&ske=2026-08-25T20%3A48%3A12Z&sks=b&skv=2026-02-06&sig=g1UwriOgxWP4iCdS6sn5pzT2tJJqzSvRWPEmg4ugEI0%3D"
         run: |
           set -euo pipefail
           rm -rf /tmp/rc6_outer tap-tap-evo
@@ -39,16 +39,18 @@ jobs:
           python - <<'PY'
           import hashlib, json, pathlib
           root = pathlib.Path('tap-tap-evo')
-          manifest = json.loads((root/'deployment_manifest.json').read_text())
+          manifest_path = root/'deployment_manifest.json'
+          manifest = json.loads(manifest_path.read_text())
           expected = {x['path']: x['sha256'] for x in manifest['files']}
+          expected_files = sorted([*expected.keys(), 'deployment_manifest.json'])
           actual = sorted(str(p.relative_to(root)) for p in root.rglob('*') if p.is_file())
-          if actual != sorted(expected):
-              raise SystemExit(f'file set mismatch: {actual}')
+          if actual != expected_files:
+              raise SystemExit(f'file set mismatch: {actual} != {expected_files}')
           for rel, sha in expected.items():
               got = hashlib.sha256((root/rel).read_bytes()).hexdigest()
               if got != sha:
                   raise SystemExit(f'hash mismatch: {rel}: {got} != {sha}')
-          print('RC6 exact package verified')
+          print('RC6 exact 19-file package verified')
           PY
 
       - name: Commit preview payload
