@@ -1,68 +1,10 @@
-name: TAP TAP EVO RC6 Preview Publish
+name: TAP TAP EVO RC6 Preview Branch Marker
 
 on:
-  push:
-    branches: [tap-tap-preview-rc6]
-    paths:
-      - .github/workflows/tap_tap_preview_pages.yml
   workflow_dispatch:
 
-permissions:
-  contents: write
-
-concurrency:
-  group: tap-tap-preview-rc6-publish
-  cancel-in-progress: true
-
 jobs:
-  publish:
+  marker:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout preview branch
-        uses: actions/checkout@v4
-        with:
-          ref: tap-tap-preview-rc6
-
-      - name: Fetch verified RC6 artifact
-        env:
-          RC6_URL: "https://sdmntprjapaneast.oaiusercontent.com/files/00000000-f200-8209-9592-78f8f1fe4d68/raw?se=2026-08-24T20%3A57%3A41Z&sp=r&sv=2026-02-06&sr=b&scid=daeae972-39d7-5b36-9b16-f7851dea13ba&skoid=b1bca990-dcac-4c31-8ca1-ac563cf24c54&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-08-23T22%3A42%3A07Z&ske=2026-08-24T22%3A42%3A07Z&sks=b&skv=2026-02-06&sig=vt5uaSkGWaLH1vw9atgEzWOQbZDi7b%2BRd3P5P9JdZbI%3D"
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/rc6_outer tap-tap-evo
-          mkdir -p /tmp/rc6_outer tap-tap-evo
-          curl --fail --location --retry 3 "$RC6_URL" -o /tmp/rc6_outer.zip
-          unzip -q /tmp/rc6_outer.zip -d /tmp/rc6_outer
-          test -f /tmp/rc6_outer/tap-tap-evo-itchio-rc6-candidate.zip
-          echo "9a7c80e5c52c1e5ff8bd25bc71e5540e6576529e5f01272b8d8ccf7533167e8a  /tmp/rc6_outer/tap-tap-evo-itchio-rc6-candidate.zip" | sha256sum -c -
-          unzip -q /tmp/rc6_outer/tap-tap-evo-itchio-rc6-candidate.zip -d tap-tap-evo
-
-      - name: Verify exact 19-file RC6 payload
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import hashlib, json, pathlib
-          root = pathlib.Path('tap-tap-evo')
-          manifest = json.loads((root/'deployment_manifest.json').read_text())
-          expected = {x['path']: x['sha256'] for x in manifest['files']}
-          actual = sorted(str(p.relative_to(root)) for p in root.rglob('*') if p.is_file())
-          if actual != sorted(expected):
-              raise SystemExit(f'file set mismatch: {actual}')
-          for rel, sha in expected.items():
-              got = hashlib.sha256((root/rel).read_bytes()).hexdigest()
-              if got != sha:
-                  raise SystemExit(f'hash mismatch: {rel}: {got} != {sha}')
-          print('RC6 exact package verified')
-          PY
-
-      - name: Commit preview payload
-        run: |
-          set -euo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add tap-tap-evo
-          if git diff --cached --quiet; then
-            echo 'Preview payload already current'
-            exit 0
-          fi
-          git commit -m 'Publish exact TAP TAP EVO RC6 preview payload'
-          git push origin HEAD:tap-tap-preview-rc6
+      - run: echo "Preview publishing is controlled by the default-branch verified publisher."
