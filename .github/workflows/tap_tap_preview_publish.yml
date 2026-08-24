@@ -1,10 +1,9 @@
 name: TAP TAP EVO RC6 Preview Publisher
 
 on:
-  push:
+  pull_request:
+    types: [opened, synchronize, reopened]
     branches: [main]
-    paths:
-      - .github/workflows/tap_tap_preview_publish.yml
   workflow_dispatch:
 
 permissions:
@@ -12,6 +11,7 @@ permissions:
 
 jobs:
   publish:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'tap-tap-preview-rc6'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout preview branch
@@ -22,7 +22,7 @@ jobs:
 
       - name: Fetch verified RC6 artifact
         env:
-          RC6_URL: "https://sdmntprjapaneast.oaiusercontent.com/files/00000000-bde0-8209-87a9-a5af99a2baef/raw?se=2026-08-24T20%3A58%3A41Z&sp=r&sv=2026-02-06&sr=b&scid=c7b11430-1e59-5dc5-8209-3cd05a3912f2&skoid=b1bca990-dcac-4c31-8ca1-ac563cf24c54&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-08-23T23%3A22%3A01Z&ske=2026-08-24T23%3A22%3A01Z&sks=b&skv=2026-02-06&sig=HhqbgKk5FUNzz5BdUXF1m50H17cyWUrrO9gJPmfwNFY%3D"
+          RC6_URL: "https://sdmntprjapaneast.oaiusercontent.com/files/00000000-8858-8209-98ad-de59bb2f08e1/raw?se=2026-08-24T21%3A01%3A21Z&sp=r&sv=2026-02-06&sr=b&scid=b1da96ef-b6d1-5561-a15d-5752f9184222&skoid=b1bca990-dcac-4c31-8ca1-ac563cf24c54&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-08-24T05%3A20%3A17Z&ske=2026-08-25T05%3A20%3A17Z&sks=b&skv=2026-02-06&sig=JJcfVJW6kClcKXFmkx3f2Tj9QzaUsdl5dOXN71sbiX0%3D"
         run: |
           set -euo pipefail
           rm -rf /tmp/rc6_outer tap-tap-evo
