@@ -1,76 +1,68 @@
-name: TAP TAP EVO RC6 Preview
+name: TAP TAP EVO RC6 Preview Publish
 
 on:
   push:
     branches: [tap-tap-preview-rc6]
+    paths:
+      - .github/workflows/tap_tap_preview_pages.yml
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: tap-tap-preview-pages
+  group: tap-tap-preview-rc6-publish
   cancel-in-progress: true
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout preview branch
         uses: actions/checkout@v4
+        with:
+          ref: tap-tap-preview-rc6
 
       - name: Fetch verified RC6 artifact
         env:
-          RC6_URL: "https://sdmntprjapaneast.oaiusercontent.com/files/00000000-1a8c-8209-b2f8-bf367e0708ef/raw?se=2026-08-24T20%3A55%3A55Z&sp=r&sv=2026-02-06&sr=b&scid=3aca70f7-c258-55a9-8e68-866040b90dfb&skoid=b1bca990-dcac-4c31-8ca1-ac563cf24c54&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-08-23T22%3A43%3A43Z&ske=2026-08-24T22%3A43%3A43Z&sks=b&skv=2026-02-06&sig=Fuh8/0CvXTqZ8LI4NBmm64DpxypbYvD3XaDuwJQC448%3D"
+          RC6_URL: "https://sdmntprjapaneast.oaiusercontent.com/files/00000000-f200-8209-9592-78f8f1fe4d68/raw?se=2026-08-24T20%3A57%3A41Z&sp=r&sv=2026-02-06&sr=b&scid=daeae972-39d7-5b36-9b16-f7851dea13ba&skoid=b1bca990-dcac-4c31-8ca1-ac563cf24c54&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-08-23T22%3A42%3A07Z&ske=2026-08-24T22%3A42%3A07Z&sks=b&skv=2026-02-06&sig=vt5uaSkGWaLH1vw9atgEzWOQbZDi7b%2BRd3P5P9JdZbI%3D"
         run: |
           set -euo pipefail
-          mkdir -p /tmp/rc6_outer _site
+          rm -rf /tmp/rc6_outer tap-tap-evo
+          mkdir -p /tmp/rc6_outer tap-tap-evo
           curl --fail --location --retry 3 "$RC6_URL" -o /tmp/rc6_outer.zip
           unzip -q /tmp/rc6_outer.zip -d /tmp/rc6_outer
           test -f /tmp/rc6_outer/tap-tap-evo-itchio-rc6-candidate.zip
           echo "9a7c80e5c52c1e5ff8bd25bc71e5540e6576529e5f01272b8d8ccf7533167e8a  /tmp/rc6_outer/tap-tap-evo-itchio-rc6-candidate.zip" | sha256sum -c -
-          unzip -q /tmp/rc6_outer/tap-tap-evo-itchio-rc6-candidate.zip -d _site
+          unzip -q /tmp/rc6_outer/tap-tap-evo-itchio-rc6-candidate.zip -d tap-tap-evo
 
-      - name: Verify exact RC6 package
+      - name: Verify exact 19-file RC6 payload
         run: |
           set -euo pipefail
           python - <<'PY'
           import hashlib, json, pathlib
-          root = pathlib.Path('_site')
+          root = pathlib.Path('tap-tap-evo')
           manifest = json.loads((root/'deployment_manifest.json').read_text())
           expected = {x['path']: x['sha256'] for x in manifest['files']}
-          actual_files = sorted(str(p.relative_to(root)) for p in root.rglob('*') if p.is_file())
-          expected_files = sorted(expected)
-          if actual_files != expected_files:
-              raise SystemExit(f'file set mismatch: {actual_files} != {expected_files}')
+          actual = sorted(str(p.relative_to(root)) for p in root.rglob('*') if p.is_file())
+          if actual != sorted(expected):
+              raise SystemExit(f'file set mismatch: {actual}')
           for rel, sha in expected.items():
               got = hashlib.sha256((root/rel).read_bytes()).hexdigest()
               if got != sha:
                   raise SystemExit(f'hash mismatch: {rel}: {got} != {sha}')
-          print('RC6 exact 19-file package verified')
+          print('RC6 exact package verified')
           PY
-          test -f _site/index.html
-          touch _site/.nojekyll
 
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Commit preview payload
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add tap-tap-evo
+          if git diff --cached --quiet; then
+            echo 'Preview payload already current'
+            exit 0
+          fi
+          git commit -m 'Publish exact TAP TAP EVO RC6 preview payload'
+          git push origin HEAD:tap-tap-preview-rc6
